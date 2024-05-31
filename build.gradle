@@ -27,6 +27,8 @@ dependencies {
     implementation 'com.google.guava:guava:23.5-jre'
     implementation 'org.apache.httpcomponents.client5:httpclient5:5.0'
     implementation 'org.apache.httpcomponents.client5:httpclient5-fluent:5.0'
+    implementation 'org.jfree:jfreechart:1.0.19' 
+    
 }
 
 sourceSets {

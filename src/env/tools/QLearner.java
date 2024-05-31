@@ -61,8 +61,138 @@ public class QLearner extends Artifact {
     Double gamma = Double.valueOf(gammaObj.toString());
     Double epsilon = Double.valueOf(epsilonObj.toString());
     Integer reward = Integer.valueOf(rewardObj.toString());
-  
+
+
+    // Convert goalDescription elements to Integer
+    Integer goalZ1 = ((Number) goalDescription[0]).intValue();
+    Integer goalZ2 = ((Number) goalDescription[1]).intValue();
+    List<Integer> intGoalDescription = Arrays.asList(goalZ1, goalZ2);
+
+
+    // Initialize the Q-Table
+    double[][] qTable = initializeQTable();
+    
+    // Initialize GUI
+    QLearningVisualizer visualizer = new QLearningVisualizer("Q-Learning Dashboard");
+    int step = 0;
+
+
+    // Main Q-Learning loop
+    for (int e = 0; e < episodes; e++) {
+        // Randomize initial state by performing a random action
+        lab.performAction((int) (Math.random() * actionCount));
+        int state = lab.readCurrentState();
+      
+        for (int stepCount = 0; stepCount < 100; stepCount++) { // assuming a max of 1000 steps per episode
+            // Choose action using epsilon-greedy policy
+            int action;
+            if (Math.random() < epsilon) {
+                action = (int) (Math.random() * actionCount);
+            } else {
+                action = getMaxQAction(qTable, state);
+            }
+
+            // Perform action and get reward and next state
+            lab.performAction(action);
+            int nextState = lab.readCurrentState();
+            double immediateReward = getImmediateReward(nextState, goalDescription, reward);
+
+            // Update Q-Value
+            double oldQValue = qTable[state][action];
+            double maxQValueNextState = getMaxQValue(qTable, nextState);
+            qTable[state][action] = oldQValue + alpha * (immediateReward + gamma * maxQValueNextState - oldQValue);
+
+            // Update Q-Value
+            updateQTable(qTable, state, action, immediateReward, nextState, alpha, gamma);
+
+            // Update visualization
+            List<Integer> currentStateDesc = lab.getStateDescription(state);
+            visualizer.update(step, currentStateDesc, intGoalDescription, action, immediateReward);
+            visualizer.updateQTable(qTable);
+            step++;
+
+            // Transition to next state
+            state = nextState;
+            LOGGER.info("Transition to state: " + state);
+            
+            // Check if goal state is reached
+            if (isGoalState(nextState, goalDescription)) {
+                LOGGER.info("Goal reached: " + goalDescription);
+                break;
+            }
+        }
+    }
+
+    int goalHash = Arrays.hashCode(goalDescription);
+    qTables.put(goalHash, qTable);
+
+    printQTable(qTable);
+    //visualizer.updateQTable(qTable);
+}
+
+
+public void calculateQ(String goalDescriptionStr, int episodes, double alpha, double gamma, double epsilon, int reward) {
+    Object[] goalDescription = parseGoalDescription(goalDescriptionStr);
+    calculateQ(goalDescription, episodes, alpha, gamma, epsilon, reward);
+}
+
+private Object[] parseGoalDescription(String goalDescriptionStr) {
+    String[] parts = goalDescriptionStr.replace("[", "").replace("]", "").split(",");
+    Object[] goalDescription = new Object[parts.length];
+    for (int i = 0; i < parts.length; i++) {
+        goalDescription[i] = Integer.parseInt(parts[i].trim());
+    }
+    return goalDescription;
+}
+
+  private int getMaxQAction(double[][] qTable, int state) {
+      double maxQ = Double.NEGATIVE_INFINITY;
+      int action = -1;
+      for (int a = 0; a < qTable[state].length; a++) {
+          if (qTable[state][a] > maxQ) {
+              maxQ = qTable[state][a];
+              action = a;
+          }
+      }
+      return action;
   }
+
+
+  private void updateQTable(double[][] qTable, int state, int action, double reward, int nextState, double alpha, double gamma) {
+    double oldQValue = qTable[state][action];
+    double maxQValueNextState = getMaxQValue(qTable, nextState);
+    qTable[state][action] = oldQValue + alpha * (reward + gamma * maxQValueNextState - oldQValue);
+  }
+
+  private double getMaxQValue(double[][] qTable, int state) {
+      double maxQ = Double.NEGATIVE_INFINITY;
+      for (double q : qTable[state]) {
+          if (q > maxQ) {
+              maxQ = q;
+          }
+      }
+      return maxQ;
+  }
+
+  private boolean isGoalState(int state, Object[] goalDescription) {
+    List<Integer> currentState = lab.getStateDescription(state);
+    boolean isGoal = currentState.get(0).equals(goalDescription[0]) && currentState.get(1).equals(goalDescription[1]);
+    if (isGoal) {
+        LOGGER.info("State " + state + " matches goal state: " + Arrays.toString(goalDescription));
+    }
+    return isGoal;
+}
+
+
+
+
+private double getImmediateReward(int state, Object[] goalDescription, int reward) {
+  if (isGoalState(state, goalDescription)) {
+      LOGGER.info("Goal state reached: " + Arrays.toString(goalDescription) + " at state: " + state);
+      return reward;
+  }
+  return -1;
+}
 
 /**
 * Returns information about the next best action based on a provided state and the QTable for
@@ -79,20 +209,67 @@ public class QLearner extends Artifact {
   public void getActionFromState(Object[] goalDescription, Object[] currentStateDescription,
       OpFeedbackParam<String> nextBestActionTag, OpFeedbackParam<Object[]> nextBestActionPayloadTags,
       OpFeedbackParam<Object[]> nextBestActionPayload) {
-         
-        // remove the following upon implementing Task 2.3!
+        Integer goalZ1 = ((Number) goalDescription[0]).intValue();
+    Integer goalZ2 = ((Number) goalDescription[1]).intValue();
+    int goalHash = Arrays.hashCode(goalDescription);
 
-        // sets the semantic annotation of the next best action to be returned 
-        nextBestActionTag.set("http://example.org/was#SetZ1Light");
+    double[][] qTable = qTables.get(goalHash);
+    if (qTable == null) {
+        failed("Q-Table for goal state not found.");
+        return;
+    }
 
-        // sets the semantic annotation of the payload of the next best action to be returned 
-        Object payloadTags[] = { "Z1Light" };
-        nextBestActionPayloadTags.set(payloadTags);
 
-        // sets the payload of the next best action to be returned 
-        Object payload[] = { true };
-        nextBestActionPayload.set(payload);
+    int currentState = lab.getStateIndex(currentStateDescription);
+    int bestAction = getMaxQAction(qTable, currentState);
+
+    switch (bestAction) {
+        case 0:
+            nextBestActionTag.set("http://example.org/was#SetZ1Light");
+            nextBestActionPayloadTags.set(new Object[]{"Z1Light"});
+            nextBestActionPayload.set(new Object[]{true});
+            break;
+        case 1:
+            nextBestActionTag.set("http://example.org/was#SetZ1Light");
+            nextBestActionPayloadTags.set(new Object[]{"Z1Light"});
+            nextBestActionPayload.set(new Object[]{false});
+            break;
+        case 2:
+            nextBestActionTag.set("http://example.org/was#SetZ2Light");
+            nextBestActionPayloadTags.set(new Object[]{"Z2Light"});
+            nextBestActionPayload.set(new Object[]{true});
+            break;
+        case 3:
+            nextBestActionTag.set("http://example.org/was#SetZ2Light");
+            nextBestActionPayloadTags.set(new Object[]{"Z2Light"});
+            nextBestActionPayload.set(new Object[]{false});
+            break;
+        case 4:
+            nextBestActionTag.set("http://example.org/was#SetZ1Blinds");
+            nextBestActionPayloadTags.set(new Object[]{"Z1Blinds"});
+            nextBestActionPayload.set(new Object[]{true});
+            break;
+        case 5:
+            nextBestActionTag.set("http://example.org/was#SetZ1Blinds");
+            nextBestActionPayloadTags.set(new Object[]{"Z1Blinds"});
+            nextBestActionPayload.set(new Object[]{false});
+            break;
+        case 6:
+            nextBestActionTag.set("http://example.org/was#SetZ2Blinds");
+            nextBestActionPayloadTags.set(new Object[]{"Z2Blinds"});
+            nextBestActionPayload.set(new Object[]{true});
+            break;
+        case 7:
+            nextBestActionTag.set("http://example.org/was#SetZ2Blinds");
+            nextBestActionPayloadTags.set(new Object[]{"Z2Blinds"});
+            nextBestActionPayload.set(new Object[]{false});
+            break;
+        default:
+            failed("Invalid action index: " + bestAction);
       }
+         
+
+    }
 
     /**
     * Print the Q matrix
@@ -125,3 +302,4 @@ public class QLearner extends Artifact {
     return qTable;
   }
 }
+

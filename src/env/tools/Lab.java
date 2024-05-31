@@ -29,6 +29,28 @@ import ch.unisg.ics.interactions.wot.td.vocabularies.TD;
 */
 public class Lab extends LearningEnvironment {
 
+
+  /** Additional Class for State Descr to test */
+  public List<Integer> getStateDescription(int stateIndex) {
+    List<List<Integer>> stateList = new ArrayList<>(stateSpace);
+    return stateList.get(stateIndex);
+  }
+
+  /** Additional Class for State Index to test Task 2.3 */
+  public int getStateIndex(Object[] stateDescription) {
+    List<Integer> state = new ArrayList<>();
+    state.add(discretizeLightLevel((Double) stateDescription[0]));
+    state.add(discretizeLightLevel((Double) stateDescription[1]));
+    state.add((Boolean) stateDescription[2] ? 1 : 0);
+    state.add((Boolean) stateDescription[3] ? 1 : 0);
+    state.add((Boolean) stateDescription[4] ? 1 : 0);
+    state.add((Boolean) stateDescription[5] ? 1 : 0);
+    state.add(discretizeSunshine((Double) stateDescription[6]));
+
+    List<List<Integer>> stateList = new ArrayList<>(stateSpace);
+    return stateList.indexOf(state);
+  }
+
   /**
   * The W3C Web of Things Thing Description used for interacting with the
   * lab environment
